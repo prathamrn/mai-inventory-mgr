@@ -1,56 +1,50 @@
-FROM ubuntu:20.04
+FROM ubuntu:24.04
 
-MAINTAINER talal "talal.abouhaiba@gmail.com"
+LABEL maintainer="talal.abouhaiba@gmail.com"
 
-RUN apt-get update && apt-get install -y \
-        software-properties-common
-    RUN add-apt-repository ppa:deadsnakes/ppa
-    RUN apt-get update && apt-get install -y \
-        python3.7 \
-        python3.7-distutils \
+ARG TARGETARCH
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 \
         python3-pip \
+        ca-certificates \
         wget \
-        tzdata
-    RUN python3.7 -m pip install pip
+        tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
-# We copy just the requirements.txt first to leverage Docker cache
+# Pull arch-correct litestream + s6-overlay binaries.
+# litestream uses arm64/amd64; s6-overlay v2 uses aarch64/amd64.
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) LITESTREAM_ARCH=amd64; S6_ARCH=amd64 ;; \
+      arm64) LITESTREAM_ARCH=arm64; S6_ARCH=aarch64 ;; \
+      *) echo "Unsupported TARGETARCH: ${TARGETARCH}"; exit 1 ;; \
+    esac; \
+    wget -O /tmp/litestream.tar.gz \
+        "https://github.com/benbjohnson/litestream/releases/download/v0.3.8/litestream-v0.3.8-linux-${LITESTREAM_ARCH}-static.tar.gz"; \
+    tar -C /usr/local/bin -xzf /tmp/litestream.tar.gz; \
+    rm /tmp/litestream.tar.gz; \
+    wget -O /tmp/s6-overlay-installer \
+        "https://github.com/just-containers/s6-overlay/releases/download/v2.2.0.3/s6-overlay-${S6_ARCH}-installer"; \
+    chmod +x /tmp/s6-overlay-installer; \
+    /tmp/s6-overlay-installer /; \
+    rm /tmp/s6-overlay-installer
+
 COPY ./requirements.txt /app/requirements.txt
-
 WORKDIR /app
-RUN python3.7 --version
-RUN python3.7 -m pip install -r requirements.txt
-RUN python3.7 -m pip list
+RUN python3 --version
+RUN python3 -m pip install --break-system-packages --no-cache-dir -r requirements.txt
 
 COPY . /app
 
-# Download litestream
-ADD https://github.com/benbjohnson/litestream/releases/download/v0.3.8/litestream-v0.3.8-linux-amd64-static.tar.gz /tmp/litestream.tar.gz
-RUN tar -C /usr/local/bin -xzf /tmp/litestream.tar.gz
-
-# Install s6-overlay
-ADD https://github.com/just-containers/s6-overlay/releases/download/v2.2.0.3/s6-overlay-amd64-installer /tmp/
-RUN chmod +x /tmp/s6-overlay-amd64-installer
-RUN /tmp/s6-overlay-amd64-installer /
-
-# Copy s6 init & service definitions.
 COPY etc/cont-init.d /etc/cont-init.d
 COPY etc/services.d /etc/services.d
-
-# Copy Litestream configuration file.
 COPY etc/litestream.yml /etc/litestream.yml
 
-# The kill grace time is set to zero because our app handles shutdown through SIGTERM.
 ENV S6_KILL_GRACETIME=0
-
-# Sync disks is enabled so that data is properly flushed.
 ENV S6_SYNC_DISKS=1
-
-# Ensure any failures in initialization cause the entire container to shut down
-# This is specifically used to ensure that the service does not start if the required database is not
-# obtained from the litestream service
 ENV S6_BEHAVIOUR_IF_STAGE2_FAILS=2
 
 EXPOSE 9205
-
-# Run the s6 init process on entry.
 ENTRYPOINT [ "/init" ]

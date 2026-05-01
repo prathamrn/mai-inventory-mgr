@@ -5,7 +5,7 @@ sleep 5 # Give litestream a chance to start
 
 # Prepare the database
 echo "Initializing database"
-python3.7 /app/run_init_db.py
+python3 /app/run_init_db.py
 if [ $? -eq 0 ]; then
    echo "Database initialization succeeded"
 else

@@ -1,3 +1,8 @@
 #!/usr/bin/with-contenv bash
 
+if [ "${LITESTREAM_DISABLE_RESTORE}" = "1" ]; then
+    echo "LITESTREAM_DISABLE_RESTORE=1: not replicating; idling"
+    exec sleep infinity
+fi
+
 exec litestream replicate

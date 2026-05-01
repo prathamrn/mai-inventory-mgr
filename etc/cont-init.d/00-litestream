@@ -1,15 +1,21 @@
 #!/usr/bin/with-contenv bash
 
-# Restore the data database if it does not already exist.
 if [ -f /data/mai.db ]; then
-	echo "mai.db already exists, skipping restore"
+    echo "mai.db already exists, skipping restore"
+    exit 0
+fi
+
+if [ "${LITESTREAM_DISABLE_RESTORE}" = "1" ]; then
+    echo "LITESTREAM_DISABLE_RESTORE=1: skipping restore (offline/local dev)"
+    mkdir -p /data
+    exit 0
+fi
+
+echo "No mai.db found, restoring from replica"
+litestream restore -v -replica do-spaces /data/mai.db
+if [ $? -eq 0 ]; then
+    echo "Successfully pulled down mai.db"
 else
-	echo "No mai.db found, restoring from replica if exists"
-	litestream restore -v -replica do-spaces /data/mai.db
-	if [ $? -eq 0 ]; then
-		echo "Successfully pulled down mai.db"
-	else
-		echo "FATAL ERROR: failed to pull down the mai.db database"
-		exit 1
-	fi
+    echo "FATAL ERROR: failed to pull down the mai.db database"
+    exit 1
 fi
